@@ -22,7 +22,7 @@ Finance Tracker is a cross-platform desktop and mobile application for tracking 
   - conflict resolution using last-write-wins (hybrid timestamps); deletions are propagated to other devices
 - **Settings**: toggle light/dark theme, change language (Russian/English), hide “spent” amounts
 - **Convenience** across different screens: swipe gestures for quick editing/deleting entries; on Android — multi-select and bulk deletion; list virtualization for smooth scrolling
-- **Easter eggs**: buttons with sounds (burger, chicken, star) and a flashy “SPENT” overlay
+- **Easter eggs**: buttons with sounds (burger, chickenburger, patrickstar) and a flashy “WASTED” overlay
 
 ## Technologies
 - **UI**: Avalonia 11.3 (Fluent theme, Inter font), MVVM-like structure
@@ -37,6 +37,7 @@ Finance Tracker is a cross-platform desktop and mobile application for tracking 
 ## Special Features
 - Single running instance on Windows: when launched again, the old process automatically closes, and the data file is released
 - All data is stored locally; servers and clouds are not used
+  
 RU
 # Finance Tracker — описание для релиза
 
@@ -63,7 +64,7 @@ RU
   - разрешение конфликтов по принципу «последняя запись побеждает» (гибридные метки времени), удаления переносятся на другие устройства
 - **Настройки**: переключение светлой/тёмной темы, смена языка (русский/английский), скрытие «потраченных» сумм
 - **Удобство на разных экранах**: свайп-жесты для быстрого редактирования/удаления записей, на Android — мультивыбор и массовое удаление, виртуализация списка для плавной прокрутки
-- **Пасхалки**: кнопки со звуками (бургер, курица, звезда) и эффектный оверлей «ПОТРАЧЕНО»
+- **Пасхалки**: кнопки со звуками (бургер, куриный бургер, Патрик) и эффектный оверлей «ПОТРАЧЕНО»
 
 ## Технологии
 - **UI**: Avalonia 11.3 (Fluent-тема, шрифт Inter), MVVM-подобная структура
