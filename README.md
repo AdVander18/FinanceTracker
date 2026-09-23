@@ -83,7 +83,7 @@ Sync runs without any external servers: devices discover each other in the local
 
 # RU
 
-# Finance Tracker — описание для релиза
+# Finance Tracker
 
 ## Что это
 
