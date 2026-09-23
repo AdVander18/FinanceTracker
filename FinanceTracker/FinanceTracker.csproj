@@ -1,0 +1,93 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType Condition="'$(TargetFramework)' == 'net8.0'">WinExe</OutputType>
+    <!-- Windows-десктоп: net8.0; Android: net10.0-android -->
+    <TargetFrameworks>net8.0;net10.0-android</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <AndroidManifest>Platform\Android\AndroidManifest.xml</AndroidManifest>
+    <AndroidApplication>true</AndroidApplication>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <ApplicationId>com.financetracker.app</ApplicationId>
+    <ApplicationTitle>Finance Tracker</ApplicationTitle>
+    <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <!--
+      ОБХОД APT2265 (aapt2 не поддерживает не-ASCII путь "FinanceTracker — копия"):
+      перенос промежуточных/выходных каталогов в ASCII-каталог НЕ подходит —
+      ломаются внутренние пути .NET for Android (javac не находит mono.android.IGCUserPeer,
+      XAJVC0000). Оставлено по умолчанию. См. историю.
+    -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <AndroidUseDebugRuntime>true</AndroidUseDebugRuntime>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <!--
+      ОБХОД бага .NET 10 Android в Release-сборках с MarshalMethods:
+      при запуске приложение падало сразу:
+      java.lang.UnsatisfiedLinkError: No implementation found for
+      crc6431345fe65afe8d98.AvaloniaActivity.n_onCreate(...)
+      https://github.com/dotnet/maui/issues/35209 (дубликат #34476)
+    -->
+    <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
+    <PackageReference Include="System.Windows.Extensions" Version="8.0.0" />
+    <!-- Звуковые эффекты рядом с исполняемым файлом на рабочем столе -->
+    <None Include="Sounds\**\*.wav" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <PackageReference Include="Avalonia.Android" Version="11.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
+    <AndroidResource Include="Platform\Android\Resources\**" />
+    <!--
+      Звуковые эффекты встраиваются в манифест-сборку как встроенные ресурсы .NET.
+      Не используем AndroidAsset: AAPT2 не может обрабатывать не-ASCII пути проекта
+      (APT2265) при линковке ассетов (папка "FinanceTracker — копия" содержит кириллицу).
+      Встроенные ресурсы обходят AAPT2 и извлекаются в рантайме на Android.
+    -->
+    <EmbeddedResource Include="Sounds\**\*.wav">
+      <LogicalName>Sounds.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Program.cs использует классический настольный жизненный цикл и на Android не нужен -->
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0-android'">
+    <!-- Android-платформенный код компилируется только для Android-целевого фреймворка -->
+    <Compile Remove="Platform\Android\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Иконка окна и exe-файла (такая же, как на Android) -->
+    <AvaloniaResource Include="Assets\**" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.0">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

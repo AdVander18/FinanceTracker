@@ -1,0 +1,581 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="using:FinanceTracker.Models"
+        xmlns:views="using:FinanceTracker.Views"
+		xmlns:loc="using:FinanceTracker.Localization"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="650"
+        x:Class="FinanceTracker.Views.MainView"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+	<UserControl.Styles>
+		<!-- Существующие стили -->
+		<Style Selector="TextBlock.title">
+			<Setter Property="FontSize" Value="24"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TitleForegroundBrush}"/>
+			<Setter Property="Margin" Value="20,5,0,10"/>
+		</Style>
+		<Style Selector="TextBlock.subtitle">
+			<Setter Property="FontSize" Value="14"/>
+			<Setter Property="Foreground" Value="#7F8C8D"/>
+		</Style>
+		<Style Selector="Border.card">
+			<Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="BoxShadow" Value="0 2 5 0 #22000000"/>
+			<Setter Property="Margin" Value="8,4"/>
+			<Setter Property="Padding" Value="12"/>
+		</Style>
+		<Style Selector="TextBlock.itemName">
+			<Setter Property="FontSize" Value="16"/>
+			<Setter Property="FontWeight" Value="Medium"/>
+			<Setter Property="Foreground" Value="{DynamicResource ItemNameForegroundBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.itemDate">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Foreground" Value="{DynamicResource ItemDateForegroundBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.itemAmount">
+			<Setter Property="FontSize" Value="18"/>
+			<Setter Property="FontWeight" Value="Bold"/>
+			<Setter Property="Foreground" Value="{DynamicResource ItemAmountForegroundBrush}"/>
+		</Style>
+		<!-- Новый стиль для категории -->
+		<Style Selector="TextBlock.itemCategory">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="#3498DB"/>
+			<Setter Property="Margin" Value="0,2,0,0"/>
+		</Style>
+		<Style Selector="Button.primary">
+			<Setter Property="Background" Value="{DynamicResource PrimaryButtonBackgroundBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource PrimaryButtonForegroundBrush}"/>
+			<Setter Property="FontSize" Value="14"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Padding" Value="15,8"/>
+			<Setter Property="Margin" Value="10,0,0,0"/>
+		</Style>
+		<Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource PrimaryButtonHoverBackgroundBrush}"/>
+		</Style>
+		<Style Selector="TextBox.input">
+			<Setter Property="FontSize" Value="14"/>
+			<Setter Property="Padding" Value="8"/>
+			<Setter Property="Margin" Value="0,0,8,0"/>
+		</Style>
+		<Style Selector="DatePicker.input">
+			<Setter Property="FontSize" Value="14"/>
+			<Setter Property="Margin" Value="0,0,8,0"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid x:Name="RootGrid" RowDefinitions="Auto,Auto,*,Auto" PointerPressed="OnRootGridPointerPressed">
+		<!-- Заголовок с кнопкой настроек -->
+		<Grid Grid.Row="0" Margin="10,0,0,5">
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="*"/>
+				<ColumnDefinition Width="Auto"/>
+			</Grid.ColumnDefinitions>
+			<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+				<Path Data="{StaticResource IconWallet}"
+					  Fill="{DynamicResource TitleForegroundBrush}"
+					  Width="26" Height="26" Stretch="Uniform"/>
+				<TextBlock Text="Finance Tracker" Classes="title" Margin="0"/>
+			</StackPanel>
+			<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="0,0,20,0">
+<Button
+				Background="Transparent"
+				BorderThickness="0"
+				Foreground="{DynamicResource TitleForegroundBrush}"
+				Padding="8"
+				ToolTip.Tip="{loc:Loc Tooltip_Statistics}"
+				Click="OnStatsClick">
+					<Path Data="{StaticResource IconStats}"
+						  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+						  Width="22" Height="22" Stretch="Uniform"/>
+				</Button>
+				<Button
+				Background="Transparent"
+				BorderThickness="0"
+				Foreground="{DynamicResource TitleForegroundBrush}"
+				Padding="8"
+				ToolTip.Tip="{loc:Loc Tooltip_ExportExcel}"
+				Click="OnExportClick">
+					<Path Data="{StaticResource IconExport}"
+						  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+						  Width="22" Height="22" Stretch="Uniform"/>
+				</Button>
+				<Button
+					Background="Transparent"
+					BorderThickness="0"
+					Foreground="{DynamicResource TitleForegroundBrush}"
+					Padding="8"
+					ToolTip.Tip="{loc:Loc Tooltip_ImportExcel}"
+					Click="OnImportClick">
+					<Path Data="{StaticResource IconImport}"
+						  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+						  Width="22" Height="22" Stretch="Uniform"/>
+				</Button>
+				<Button
+					x:Name="SettingsButton"
+					Background="Transparent"
+					BorderThickness="0"
+					Foreground="{DynamicResource TitleForegroundBrush}"
+					Padding="8"
+					ToolTip.Tip="{loc:Loc Tooltip_Settings}"
+					Click="OnSettingsClick">
+					<Path Data="{StaticResource IconSettings}"
+						  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+						  Width="24" Height="24" Stretch="Uniform"/>
+				</Button>
+			</StackPanel>
+		</Grid>
+
+		<!-- Панель выбора месяца и года -->
+		<Grid Grid.Row="1" Margin="10,0,10,5" ColumnDefinitions="*,Auto">
+			<WrapPanel Grid.Column="0" Orientation="Horizontal">
+				<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
+					<TextBlock Text="{loc:Loc Label_Month}" VerticalAlignment="Center"/>
+					<ComboBox x:Name="MonthComboBox" MinWidth="110"/>
+				</StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,0,2">
+					<TextBlock Text="{loc:Loc Label_Year}" VerticalAlignment="Center"/>
+					<ComboBox x:Name="YearComboBox" MinWidth="90"/>
+				</StackPanel>
+			</WrapPanel>
+
+			<Button x:Name="SortButton"
+					Grid.Column="1"
+					VerticalAlignment="Center"
+					Background="Transparent"
+					BorderThickness="0"
+					Foreground="{DynamicResource TitleForegroundBrush}"
+					Padding="8"
+					ToolTip.Tip="{loc:Loc Tooltip_Sort}">
+				<Path Data="{StaticResource IconSort}"
+					  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+					  Width="22" Height="22" Stretch="Uniform"/>
+				<Button.Flyout>
+					<MenuFlyout Placement="BottomEdgeAlignedRight">
+						<MenuItem x:Name="SortByNameItem"
+								  Header="{loc:Loc Sort_ByName}"
+								  Click="OnSortByNameClick"/>
+						<MenuItem x:Name="SortByAmountItem"
+								  Header="{loc:Loc Sort_ByAmount}"
+								  Click="OnSortByAmountClick"/>
+						<MenuItem x:Name="SortByDateItem"
+								  Header="{loc:Loc Sort_ByDate}"
+								  Click="OnSortByDateClick"/>
+					</MenuFlyout>
+				</Button.Flyout>
+			</Button>
+		</Grid>
+
+		<DockPanel Grid.Row="2" LastChildFill="True">
+			<!-- Нижняя панель итого прижата к низу -->
+			<Border DockPanel.Dock="Bottom"
+					Background="{DynamicResource BottomPanelBackgroundBrush}" Padding="12">
+				<WrapPanel Orientation="Horizontal">
+					<StackPanel VerticalAlignment="Center" Spacing="2" Margin="4,0,12,0">
+						<TextBlock x:Name="MonthTotalLabel" FontSize="15"
+									Foreground="{DynamicResource SubtitleForegroundBrush}"
+									TextWrapping="Wrap"/>
+						<TextBlock x:Name="TotalText" Text="0,00 ₽" FontSize="20" FontWeight="Bold"
+								   Foreground="{DynamicResource ItemAmountForegroundBrush}"/>
+					</StackPanel>
+					<Button Classes="primary" Click="OnAddPurchaseClick" VerticalAlignment="Center">
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<Path Data="{StaticResource IconAdd}"
+								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+								  Width="18" Height="18" Stretch="Uniform"/>
+							<TextBlock Text="{loc:Loc Button_Add}" VerticalAlignment="Center"/>
+						</StackPanel>
+					</Button>
+				</WrapPanel>
+			</Border>
+
+			<!-- Панель выделения покупок для удаления (Android) -->
+			<Border x:Name="SelectionBar"
+					DockPanel.Dock="Bottom"
+					Background="{DynamicResource BottomPanelBackgroundBrush}"
+					Padding="12"
+					IsVisible="False">
+				<StackPanel Orientation="Horizontal" Spacing="8">
+					<TextBlock x:Name="SelectionCountText"
+							   VerticalAlignment="Center"
+							   FontSize="15"
+							   FontWeight="SemiBold"
+							   Foreground="{DynamicResource ItemAmountForegroundBrush}"/>
+					<Button x:Name="ClearSelectionButton"
+							Content="{loc:Loc Button_ClearSelection}"
+							VerticalAlignment="Center"
+							Margin="0"
+							Click="OnClearSelectionClick"/>
+					<Button x:Name="DeleteSelectedButton"
+							VerticalAlignment="Center"
+							Margin="0"
+							Background="#E74C3C"
+							Foreground="White"
+							Click="OnDeleteSelectedClick"/>
+				</StackPanel>
+			</Border>
+
+			<!-- Виртуализируемый список: VirtualizingStackPanel вместо обычного StackPanel.
+			     StackPanel по умолчанию создаёт контейнеры для ВСЕХ записей сразу —
+			     на Android прокрутка из-за этого тормозила. VirtualizingStackPanel
+			     рендерит только видимые элементы. -->
+			<ScrollViewer x:Name="ExpensesScrollViewer">
+				<ItemsControl x:Name="ExpensesList">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<VirtualizingStackPanel/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="models:ExpenseItem">
+							<Border Classes="card" HorizontalAlignment="Stretch"
+									PointerPressed="OnCardPointerPressed"
+									Cursor="Hand">
+								<Border.ContextMenu>
+									<ContextMenu>
+										<MenuItem Header="{loc:Loc Menu_Edit}"   Click="OnEditClick"/>
+										<MenuItem Header="{loc:Loc Menu_Delete}" Click="OnDeleteClick"/>
+									</ContextMenu>
+								</Border.ContextMenu>
+								<Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+									<StackPanel Grid.Column="0" Spacing="4">
+										<TextBlock Text="{Binding Name}" Classes="itemName"/>
+										<TextBlock Text="{Binding Date}" Classes="itemDate"/>
+										<!-- Отображение категории -->
+										<TextBlock Text="{Binding Category}" Classes="itemCategory"/>
+									</StackPanel>
+									<TextBlock Grid.Column="1" Text="{Binding Amount, StringFormat={}{0:N2} ₽}" Classes="itemAmount"/>
+
+									<!-- Подсветка выбранной покупки -->
+									<Border IsHitTestVisible="False"
+											Grid.ColumnSpan="2"
+											IsVisible="{Binding IsSelected}"
+											Background="#332ECC71"
+											CornerRadius="8"/>
+									<!-- Бейдж галочки -->
+									<Border IsHitTestVisible="False"
+											Grid.ColumnSpan="2"
+											IsVisible="{Binding IsSelected}"
+											HorizontalAlignment="Right"
+											VerticalAlignment="Top"
+											CornerRadius="12"
+											Width="24" Height="24"
+											Background="#2ECC71"
+											Margin="0,6,6,0">
+										<Path Data="{StaticResource IconCheck}"
+											  Fill="White" Width="14" Height="14" Stretch="Uniform"/>
+									</Border>
+								</Grid>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</ScrollViewer>
+		</DockPanel>
+
+		<!-- Панель добавления/редактирования -->
+		<Border x:Name="AddPanel" Grid.Row="3" IsVisible="False"
+                Background="{DynamicResource PanelBackgroundBrush}" Padding="12" Margin="8,0">
+			<StackPanel Spacing="10">
+				<TextBlock x:Name="AddEditPanelTitle"
+           FontSize="18" FontWeight="SemiBold"
+           Foreground="{DynamicResource TitleForegroundBrush}"/>
+				<TextBox x:Name="NewNameBox" Watermark="{loc:Loc Watermark_PurchaseName}" Classes="input" HorizontalAlignment="Stretch"/>
+				<TextBox x:Name="NewAmountBox" Watermark="{loc:Loc Watermark_Amount}" Classes="input" HorizontalAlignment="Stretch"/>
+				<DatePicker x:Name="NewDatePicker" Classes="input" HorizontalAlignment="Stretch"/>
+				<!-- Выбор категории -->
+				<ComboBox x:Name="CategoryComboBox" HorizontalAlignment="Stretch" />
+				<Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+					<Button Grid.Column="0" Content="{loc:Loc Button_Save}" Classes="primary" Click="OnSaveClick" HorizontalAlignment="Stretch"/>
+					<Button Grid.Column="1" Content="{loc:Loc Button_Cancel}" Click="OnCancelClick" HorizontalAlignment="Stretch"/>
+				</Grid>
+			</StackPanel>
+		</Border>
+
+		<!-- Выдвижная панель настроек -->
+		<Border x:Name="SettingsPanel"
+				Grid.Row="0" Grid.RowSpan="5"
+				HorizontalAlignment="Right"
+				Width="300"
+				Background="{DynamicResource SettingsPanelBackgroundBrush}"
+				IsVisible="False"
+				ZIndex="10"
+				RenderTransformOrigin="0,0">
+			<Border.RenderTransform>
+				<TranslateTransform X="300">
+					<TranslateTransform.Transitions>
+						<Transitions>
+							<DoubleTransition Property="X" Duration="0:0:0.25" Easing="CubicEaseOut"/>
+						</Transitions>
+					</TranslateTransform.Transitions>
+				</TranslateTransform>
+			</Border.RenderTransform>
+
+			<!-- Оборачиваем содержимое в ScrollViewer -->
+			<ScrollViewer VerticalScrollBarVisibility="Auto"
+						  HorizontalScrollBarVisibility="Disabled"
+						  Padding="0">
+				<StackPanel Margin="20" Spacing="15">
+					<!-- Заголовок с кнопкой закрытия -->
+					<!-- Заголовок с кнопками смены языка и закрытия -->
+					<Grid ColumnDefinitions="*,Auto,Auto">
+						<TextBlock Grid.Column="0" Text="{loc:Loc Title_Settings}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource SettingsTitleForegroundBrush}" VerticalAlignment="Center"/>
+						<Button Grid.Column="1" x:Name="LanguageButton"
+								Background="Transparent"
+								BorderThickness="0"
+								Foreground="{DynamicResource CloseButtonForegroundBrush}"
+								Padding="5"
+								Margin="0,0,4,0"
+								ToolTip.Tip="{loc:Loc Tooltip_Language}"
+								Click="OnToggleLanguageClick">
+							<Path Data="{StaticResource IconGlobe}"
+								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+								  Width="20" Height="20" Stretch="Uniform"/>
+						</Button>
+						<Button Grid.Column="2" x:Name="CloseSettingsButton"
+								Background="Transparent"
+								BorderThickness="0"
+								Foreground="{DynamicResource CloseButtonForegroundBrush}"
+								Padding="5"
+								HorizontalAlignment="Right"
+								Click="OnCloseSettingsClick">
+							<Path Data="{StaticResource IconClose}"
+								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+								  Width="20" Height="20" Stretch="Uniform"/>
+						</Button>
+					</Grid>
+					<Button Content="{loc:Loc Button_ToggleTheme}"
+							Click="OnToggleThemeClick"
+							Background="{DynamicResource ThemeToggleBackgroundBrush}"
+							Foreground="{DynamicResource ThemeToggleForegroundBrush}"
+							BorderBrush="{DynamicResource ThemeToggleBorderBrush}" />
+
+					<ToggleSwitch x:Name="HideWastedSwitch"
+								  IsCheckedChanged="OnHideWastedToggleChanged"
+								  OnContent="{loc:Loc Switch_HideWasted}"
+								  OffContent="{loc:Loc Switch_HideWasted}"
+								  HorizontalAlignment="Stretch"
+								  HorizontalContentAlignment="Left"/>
+
+					<!-- Секция управления категориями -->
+					<TextBlock Text="{loc:Loc Title_Categories}" FontWeight="SemiBold"/>
+					<ItemsControl x:Name="CategoriesList">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="x:String">
+								<Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+									<TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center"/>
+									<Button Grid.Column="1" Content="✕"
+											Click="OnDeleteCategoryClick"
+											Tag="{Binding}"
+											Background="Transparent"
+											BorderThickness="0"
+											Padding="4"
+											ToolTip.Tip="{loc:Loc Tooltip_Delete}"
+											Foreground="#E74C3C"/>
+									<Button Grid.Column="2" Content="✎"
+											Click="OnRenameCategoryClick"
+											Tag="{Binding}"
+											Background="Transparent"
+											BorderThickness="0"
+											Padding="4"
+											ToolTip.Tip="{loc:Loc Tooltip_Rename}"/>
+								</Grid>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+					<StackPanel Orientation="Horizontal" Spacing="5">
+						<TextBox x:Name="NewCategoryBox" Watermark="{loc:Loc Watermark_NewCategory}" MinWidth="150"/>
+						<Button  x:Name="AddCategoryButton" Click="OnAddCategoryClick"/>
+					</StackPanel>
+
+					<!-- Кнопка синхронизации -->
+					<Button Content="{loc:Loc Button_SyncPurchases}" Click="OnSyncClick"
+							Background="{DynamicResource ThemeToggleBackgroundBrush}"
+							Foreground="{DynamicResource ThemeToggleForegroundBrush}"
+							BorderBrush="{DynamicResource ThemeToggleBorderBrush}" />
+
+					<!-- Панель параметров синхронизации (изначально скрыта) -->
+					<StackPanel x:Name="SyncPanel" IsVisible="False" Spacing="10">
+						<TextBlock Text="{loc:Loc Title_SyncMode}" FontWeight="SemiBold"/>
+						<Button Content="{loc:Loc Button_ReceiveData}" Click="OnStartServerClick"
+								Background="{DynamicResource ThemeToggleBackgroundBrush}"
+								Foreground="{DynamicResource ThemeToggleForegroundBrush}"
+								BorderBrush="{DynamicResource ThemeToggleBorderBrush}" />
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<TextBox x:Name="ServerIpBox" Watermark="{loc:Loc Watermark_ServerIp}" MinWidth="150"/>
+							<Button Content="{loc:Loc Button_SendData}" Click="OnStartClientClick"
+									Background="{DynamicResource ThemeToggleBackgroundBrush}"
+									Foreground="{DynamicResource ThemeToggleForegroundBrush}"
+									BorderBrush="{DynamicResource ThemeToggleBorderBrush}" />
+						</StackPanel>
+						<TextBox x:Name="SyncPortBox" Watermark="{loc:Loc Watermark_Port}" Text="12345" />
+						<TextBlock x:Name="SyncLog" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SubtitleForegroundBrush}"/>
+						<ItemsControl x:Name="DiscoveredDevicesList">
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="views:DiscoveredDevice">
+									<Button Click="OnDiscoveredDeviceClick"
+											Background="Transparent"
+											BorderThickness="0"
+											Padding="4"
+											HorizontalAlignment="Stretch"
+											HorizontalContentAlignment="Left">
+										<StackPanel Orientation="Horizontal" Spacing="8">
+											<Path Data="{StaticResource IconComputer}"
+												  Fill="{DynamicResource SubtitleForegroundBrush}"
+												  Width="20" Height="20" Stretch="Uniform"/>
+											<TextBlock Text="{Binding DisplayText}"
+													   VerticalAlignment="Center"
+													   Foreground="{DynamicResource SubtitleForegroundBrush}"/>
+										</StackPanel>
+									</Button>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</StackPanel>
+
+					<!-- Новые значки внизу панели настроек -->
+					<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="20" Margin="0,10,0,0">
+						<Button Background="Transparent" BorderThickness="0" Padding="6"
+								ToolTip.Tip="{loc:Loc Tooltip_Burger}" Click="OnBurgerClick">
+							<Path Data="{StaticResource IconBurger}"
+								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+								  Width="28" Height="28" Stretch="Uniform"/>
+						</Button>
+						<Button Background="Transparent" BorderThickness="0" Padding="6"
+								ToolTip.Tip="{loc:Loc Tooltip_Chicken}" Click="OnChickenClick">
+							<Path Data="{StaticResource IconRestaurant}"
+								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+								  Width="28" Height="28" Stretch="Uniform"/>
+						</Button>
+						<Button Background="Transparent" BorderThickness="0" Padding="6"
+								ToolTip.Tip="{loc:Loc Tooltip_Star}" Click="OnStarClick">
+							<Path Data="{StaticResource IconStar}"
+								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+								  Width="28" Height="28" Stretch="Uniform"/>
+						</Button>
+					</StackPanel>
+				</StackPanel>
+			</ScrollViewer>
+		</Border>
+		<Border x:Name="WastedOverlay"
+				Grid.Row="0" Grid.RowSpan="5"
+				Background="Transparent"
+				IsHitTestVisible="False"
+				IsVisible="False"
+				ZIndex="120"
+				RenderTransformOrigin="0.5,0.5">
+			<Border.RenderTransform>
+				<ScaleTransform ScaleX="1" ScaleY="1">
+					<ScaleTransform.Transitions>
+						<Transitions>
+							<DoubleTransition Property="ScaleX" Duration="0:0:0.35" Easing="CubicEaseOut"/>
+							<DoubleTransition Property="ScaleY" Duration="0:0:0.35" Easing="CubicEaseOut"/>
+						</Transitions>
+					</ScaleTransform.Transitions>
+				</ScaleTransform>
+			</Border.RenderTransform>
+			<Grid x:Name="WastedTextHost"
+				  HorizontalAlignment="Center"
+				  VerticalAlignment="Center">
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="-3,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="3,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="0,-3,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="0,3,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="-3,-3,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="3,-3,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="-3,3,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock Text="ПОТРАЧЕНО" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#000000" Margin="3,3,0,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<TextBlock x:Name="WastedText" FontFamily="Impact, Arial Black" FontSize="84" FontWeight="Black" Foreground="#ff6565" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+			</Grid>
+		</Border>
+		<Border x:Name="StatsOverlay"
+				Grid.Row="0" Grid.RowSpan="5"
+				Background="{DynamicResource WindowBackgroundBrush}"
+				IsVisible="False"
+				ZIndex="90"/>
+		<Border x:Name="MessageOverlay"
+        Grid.Row="0" Grid.RowSpan="5"
+        Background="#80000000"
+        IsVisible="False"
+        ZIndex="100"
+		PointerPressed="OnMessageOverlayPointerPressed">
+			<Border Background="{DynamicResource CardBackgroundBrush}"
+					CornerRadius="10"
+					Padding="20"
+					MinWidth="280"
+					MaxWidth="400"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Center"
+					BoxShadow="0 4 12 0 #44000000">
+				<StackPanel Spacing="15">
+					<TextBlock x:Name="MessageTitle"
+							   FontSize="18"
+							   FontWeight="SemiBold"
+							   Foreground="{DynamicResource TitleForegroundBrush}"
+							   TextWrapping="Wrap"/>
+					<TextBlock x:Name="MessageText"
+							   Foreground="{DynamicResource TitleForegroundBrush}"
+							   TextWrapping="Wrap"/>
+					<Button x:Name="MessageOkButton"
+						Content="{loc:Loc Button_Ok}"
+						Classes="primary" HorizontalAlignment="Right" MinWidth="90" Margin="0"
+						Click="OnMessageOkClick"/>
+				</StackPanel>
+			</Border>
+		</Border>
+
+		<!-- Оверлей подтверждения удаления/выделения (Android) -->
+		<Border x:Name="DeleteConfirmOverlay"
+				Grid.Row="0" Grid.RowSpan="5"
+				Background="#80000000"
+				IsVisible="False"
+				ZIndex="100"
+				PointerPressed="OnDeleteConfirmOverlayPointerPressed">
+			<Border Background="{DynamicResource CardBackgroundBrush}"
+					CornerRadius="10"
+					Padding="20"
+					MinWidth="280"
+					MaxWidth="400"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Center"
+					BoxShadow="0 4 12 0 #44000000">
+				<StackPanel Spacing="15">
+					<TextBlock x:Name="DeleteConfirmTitle"
+							   FontSize="18"
+							   FontWeight="SemiBold"
+							   Foreground="{DynamicResource TitleForegroundBrush}"
+							   TextWrapping="Wrap"/>
+					<TextBlock x:Name="DeleteConfirmText"
+							   Foreground="{DynamicResource TitleForegroundBrush}"
+							   TextWrapping="Wrap"/>
+					<WrapPanel HorizontalAlignment="Right" ItemSpacing="8">
+						<Button x:Name="DeleteConfirmSelectButton"
+								Content="{loc:Loc Dialog_DeleteConfirm_Select}"
+								VerticalAlignment="Center"
+								Margin="0"
+								Click="OnDeleteConfirmSelectClick"/>
+						<Button x:Name="DeleteConfirmDeleteButton"
+								Content="{loc:Loc Dialog_DeleteConfirm_Delete}"
+								VerticalAlignment="Center"
+								Margin="0"
+								Background="#E74C3C"
+								Foreground="White"
+								Click="OnDeleteConfirmDeleteClick"/>
+						<Button x:Name="DeleteConfirmCancelButton"
+								Content="{loc:Loc Button_Cancel}"
+								VerticalAlignment="Center"
+								Margin="0"
+								Click="OnDeleteConfirmCancelClick"/>
+					</WrapPanel>
+				</StackPanel>
+			</Border>
+		</Border>
+	</Grid>
+</UserControl>

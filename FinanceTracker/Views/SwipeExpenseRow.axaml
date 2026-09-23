@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:FinanceTracker.Models"
+             x:Class="FinanceTracker.Views.SwipeExpenseRow"
+             x:DataType="models:ExpenseItem">
+
+	<Grid x:Name="Root" ClipToBounds="True">
+		<!-- Слой кнопок действий: виден после свайпа справа налево -->
+		<Grid x:Name="ActionsLayer"
+			  HorizontalAlignment="Right"
+			  Width="92"
+			  IsHitTestVisible="True">
+			<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,8,0">
+				<Button x:Name="DeleteButton"
+						Click="OnDeleteButtonClick"
+						Background="#E74C3C"
+						Foreground="White"
+						BorderThickness="0"
+						CornerRadius="6"
+						Margin="0,4,4,4"
+						Width="40"
+						Padding="0">
+					<Path Data="{StaticResource IconDelete}"
+						  Fill="White" Width="20" Height="20" Stretch="Uniform"/>
+				</Button>
+				<Button x:Name="EditButton"
+						Click="OnEditButtonClick"
+						Background="#3498DB"
+						Foreground="White"
+						BorderThickness="0"
+						CornerRadius="6"
+						Margin="0,4,0,4"
+						Width="40"
+						Padding="0">
+					<Path Data="{StaticResource IconEdit}"
+						  Fill="White" Width="20" Height="20" Stretch="Uniform"/>
+				</Button>
+			</StackPanel>
+		</Grid>
+
+		<!-- Карточка покупки, которая уезжает влево при свайпе -->
+		<Border x:Name="Card"
+				Classes="card"
+				HorizontalAlignment="Stretch"
+				VerticalAlignment="Stretch"
+				PointerPressed="OnCardPointerPressed"
+				PointerMoved="OnCardPointerMoved"
+				PointerReleased="OnCardPointerReleased"
+				PointerCaptureLost="OnCardPointerCaptureLost">
+			<Border.RenderTransform>
+				<TranslateTransform/>
+			</Border.RenderTransform>
+			<Grid ColumnDefinitions="*,Auto">
+				<StackPanel Grid.Column="0" Spacing="4">
+					<TextBlock Text="{Binding Name}" Classes="itemName"/>
+					<TextBlock Text="{Binding Date}" Classes="itemDate"/>
+					<TextBlock Text="{Binding Category}" Classes="itemCategory"/>
+				</StackPanel>
+				<TextBlock Grid.Column="1" Text="{Binding Amount, StringFormat={}{0:N2} ₽}" Classes="itemAmount"/>
+
+				<!-- Подсветка выбранной покупки -->
+				<Border IsHitTestVisible="False"
+						Grid.ColumnSpan="2"
+						IsVisible="{Binding IsSelected}"
+						Background="#332ECC71"
+						CornerRadius="8"/>
+				<!-- Бейдж галочки -->
+				<Border IsHitTestVisible="False"
+						Grid.ColumnSpan="2"
+						IsVisible="{Binding IsSelected}"
+						HorizontalAlignment="Right"
+						VerticalAlignment="Top"
+						CornerRadius="12"
+						Width="24" Height="24"
+						Background="#2ECC71"
+						Margin="0,6,6,0">
+					<Path Data="{StaticResource IconCheck}"
+						  Fill="White" Width="14" Height="14" Stretch="Uniform"/>
+				</Border>
+			</Grid>
+		</Border>
+	</Grid>
+</UserControl>
