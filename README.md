@@ -11,6 +11,8 @@ Finance Tracker keeps a list of your expenses (purchases) with amounts, dates an
   <img src="https://img.shields.io/badge/Storage-SQLite-2ea44f" alt="SQLite">
   <img src="https://img.shields.io/badge/Sync-P2P%20LAN-00758f" alt="P2P LAN sync">
 </p>
+<img width="902" height="646" alt="Без имени-1" src="https://github.com/user-attachments/assets/fe0a1ce3-f9e7-431c-8ea0-2b9dba3d8b3c" />
+<img width="486" height="1079" alt="Без имени-2" src="https://github.com/user-attachments/assets/0de25d68-9541-4fc9-9fd0-dc4f5f31b348" />
 
 ---
 
