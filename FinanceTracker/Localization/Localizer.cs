@@ -12,11 +12,21 @@ namespace FinanceTracker.Localization
         public static Localizer Instance { get; } = new();
 
         private string _language = "en";
+
+        // Культуру выставляем сразу при создании: сохранённая настройка может быть
+        // пустой или повреждённой, тогда до смены языка CurrentCulture остался бы
+        // системным, и штатные DatePicker показывали бы месяцы на языке ОС.
+        static Localizer() => ApplyCulture("en");
+
         public string Language
         {
             get => _language;
             set
             {
+                // Культуру применяем ДО проверки на изменение: при первом запуске
+                // сохранённый язык может совпадать с языком по умолчанию ("en"),
+                // и иначе культура не применится вовсе.
+                ApplyCulture(value);
                 if (_language == value) return;
                 _language = value;
                 // Avalonia обновляет indexer-биндинги Path="[Key]" только по
@@ -25,8 +35,22 @@ namespace FinanceTracker.Localization
             }
         }
 
-        public CultureInfo Culture =>
-            new CultureInfo(_language == "ru" ? "ru-RU" : "en-US");
+        public CultureInfo Culture => CreateCulture(_language);
+
+        private static CultureInfo CreateCulture(string language) =>
+            new CultureInfo(language == "ru" ? "ru-RU" : "en-US");
+
+        // Штатные контролы Avalonia (DatePicker, Calendar, ComboBox с датами) берут
+        // названия месяцев и дней недели из CultureInfo.CurrentCulture, а не из Localizer.
+        // Без этого языка интерфейса они остаются на языке системы.
+        private static void ApplyCulture(string language)
+        {
+            var culture = CreateCulture(language);
+            CultureInfo.DefaultThreadCurrentCulture = culture;
+            CultureInfo.DefaultThreadCurrentUICulture = culture;
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+        }
 
         private static readonly Dictionary<string, Dictionary<string, string>> Strings = new()
         {
@@ -40,8 +64,9 @@ namespace FinanceTracker.Localization
                 ["Tooltip_Delete"] = "Delete",
                 ["Tooltip_Rename"] = "Rename",
                 ["Tooltip_Burger"] = "Burger",
-                ["Tooltip_Chicken"] = "Chicken",
+                ["Tooltip_Chicken"] = "ChickenBurger",
                 ["Tooltip_Star"] = "Star",
+                ["Tooltip_DelPurch"] = "Deleting purchases",
 
                 // Month panel
                 ["Label_Month"] = "Month:",
@@ -61,6 +86,40 @@ namespace FinanceTracker.Localization
                     "Do you want to delete or select purchases for deletion?",
                 ["Dialog_DeleteConfirm_Delete"] = "Delete",
                 ["Dialog_DeleteConfirm_Select"] = "Select",
+
+                // Delete purchases by period
+                ["Delete_Title"] = "Delete purchases",
+                ["Delete_Title_For"] = "Delete purchases for",
+                ["Delete_Title_Confirm"] = "Confirm deletion",
+                ["Delete_MenuHint"] = "Choose the period to delete purchases for",
+                ["Delete_Action_For"] = "Delete purchases for",
+                ["Delete_Action_Week"] = "Delete for a week",
+                ["Delete_Action_Month"] = "Delete for a month",
+                ["Delete_Action_Year"] = "Delete for a year",
+                ["Delete_Action_AllTime"] = "Delete for all time",
+                ["Delete_Action_Custom"] = "Delete for a period",
+                ["Delete_RangeHint"] = "Or specify the period manually",
+                ["Delete_From"] = "From",
+                ["Delete_To"] = "To",
+                ["Delete_Period_Week"] = "a week",
+                ["Delete_Period_Month"] = "a month",
+                ["Delete_Period_Year"] = "a year",
+                ["Delete_Period_AllTime"] = "all time",
+                ["Delete_Period_Custom"] = "the period from {0} to {1}",
+                ["Delete_Confirm_Question"] =
+                    "Are you sure you want to delete purchases for {0}?",
+                ["Delete_Confirm_Details"] =
+                    "Records: {0} ({1} ₽), {2}. This cannot be undone.",
+                ["Delete_Confirm_Empty"] = "There are no records for this period.",
+                ["Delete_RangePreview"] = "In the period: {0} records, {1} ₽",
+                ["Delete_RangePreview_Empty"] = "There are no records in the period.",
+                ["Delete_Range_AllFrom"] = "from {0}",
+                ["Delete_Result_Title"] = "Deletion complete",
+                ["Delete_Result_Message"] = "Deleted records: {0} ({1} ₽).",
+                ["Delete_Result_Failed"] = "Failed to delete the records. Try again.",
+                ["Button_Back"] = "Back",
+                ["Button_Yes"] = "Yes",
+                ["Button_No"] = "No",
 
                 // Selection (Android)
                 ["Button_DeleteSelected"] = "Delete selected ({0})",
@@ -211,8 +270,9 @@ namespace FinanceTracker.Localization
                 ["Tooltip_Delete"] = "Удалить",
                 ["Tooltip_Rename"] = "Переименовать",
                 ["Tooltip_Burger"] = "Бургер",
-                ["Tooltip_Chicken"] = "Курица",
+                ["Tooltip_Chicken"] = "БургерСкурочкой",
                 ["Tooltip_Star"] = "Звезда",
+                ["Tooltip_DelPurch"] = "Удаление покупок",
 
                 // Панель месяца
                 ["Label_Month"] = "Месяц:",
@@ -232,6 +292,39 @@ namespace FinanceTracker.Localization
                     "Вы хотите удалить или выделить покупки для удаления?",
                 ["Dialog_DeleteConfirm_Delete"] = "Удалить",
                 ["Dialog_DeleteConfirm_Select"] = "Выделить",
+
+                // Удаление покупок за период
+                ["Delete_Title"] = "Удаление покупок",
+                ["Delete_Title_For"] = "Удалить покупки за",
+                ["Delete_Title_Confirm"] = "Подтверждение удаления",
+                ["Delete_MenuHint"] = "Выберите период, за который нужно удалить покупки",
+                ["Delete_Action_For"] = "Удалить покупки за",
+                ["Delete_Action_Week"] = "Удалить за неделю",
+                ["Delete_Action_Month"] = "Удалить за месяц",
+                ["Delete_Action_Year"] = "Удалить за год",
+                ["Delete_Action_AllTime"] = "Удалить за всё время",
+                ["Delete_Action_Custom"] = "Удалить за период",
+                ["Delete_RangeHint"] = "Или укажите период вручную",
+                ["Delete_From"] = "С",
+                ["Delete_To"] = "По",
+                ["Delete_Period_Week"] = "неделю",
+                ["Delete_Period_Month"] = "месяц",
+                ["Delete_Period_Year"] = "год",
+                ["Delete_Period_AllTime"] = "всё время",
+                ["Delete_Period_Custom"] = "период с {0} по {1}",
+                ["Delete_Confirm_Question"] =
+                    "Вы уверены, что хотите удалить покупки за {0}?",
+                ["Delete_Confirm_Details"] = "Записей: {0} ({1} ₽), {2}. Отменить будет нельзя.",
+                ["Delete_Confirm_Empty"] = "За этот период записей нет.",
+                ["Delete_RangePreview"] = "В периоде: {0} записей, {1} ₽",
+                ["Delete_RangePreview_Empty"] = "В этом периоде записей нет.",
+                ["Delete_Range_AllFrom"] = "с {0}",
+                ["Delete_Result_Title"] = "Удаление выполнено",
+                ["Delete_Result_Message"] = "Удалено записей: {0} ({1} ₽).",
+                ["Delete_Result_Failed"] = "Не удалось удалить записи. Попробуйте ещё раз.",
+                ["Button_Back"] = "Назад",
+                ["Button_Yes"] = "Да",
+                ["Button_No"] = "Нет",
 
                 // Выделение (Android)
                 ["Button_DeleteSelected"] = "Удалить выбранные ({0})",

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Text.Json.Serialization;
 
 namespace FinanceTracker.Models
 {
@@ -10,6 +11,11 @@ namespace FinanceTracker.Models
         public long PhysicalMs { get; }
         public int Logical { get; }
 
+        // Без атрибута System.Text.Json выбирает неявный конструктор структуры
+        // (у него нет параметров) и не может записать get-only свойства —
+        // метка времени приезжала бы на другое устройство нулевой. LWW и
+        // защита от «воскрешения» удалённых записей на этом и держатся.
+        [JsonConstructor]
         public HybridTimestamp(long physicalMs, int logical)
         {
             PhysicalMs = physicalMs;

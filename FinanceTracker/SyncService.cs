@@ -551,7 +551,7 @@ namespace FinanceTracker.Services
                 // 1. HELLO (клиент присылает свой lastSync, чтобы сервер знал, что отдавать)
                 var hello = await ReceiveMessageAsync(stream, ct);
 
-                // 2. MY DATA (клиент присылает свои записи, включая tombstone)
+                // 2. MY DATA (клиент присылает свои записи, включая метки удаления)
                 var incoming = await ReceiveMessageAsync(stream, ct);
                 logCallback(Localizer.Instance.Format("Sync_ReceivedRecords", incoming.Data.Count));
 
@@ -599,8 +599,8 @@ namespace FinanceTracker.Services
                     Data = new List<ExpenseItem>()
                 }, cancellationToken);
 
-                // 2. MY DATA (все локальные записи, включая tombstone)
-                var myData = NativeMethods.GetAllExpenses();
+                // 2. MY DATA (все локальные записи + метки удаления)
+                var myData = NativeMethods.GetForSync();
                 await SendMessageAsync(stream, new SyncMessage { Data = myData }, cancellationToken);
                 logCallback(Localizer.Instance.Format("Sync_SentRecords", myData.Count));
 

@@ -21,11 +21,17 @@ namespace FinanceTracker.Interop
             public double Amount;
             public string Date;
             public string Category;
-            public bool IsDeleted;              // tombstone: запись удалена, но ещё переносится по сети
         }
 
         private static SqliteConnection? _connection;
+
+        // Только живые записи. Удалённых здесь нет вообще — они вычищаются из БД,
+        // а для синхронизации удаления остаётся минимальная метка в _tombstones.
         private static readonly List<ExpenseRecord> _expenses = new();
+
+        // Метки удаления: guid -> версия. Данных покупки здесь нет вообще,
+        // только идентификатор и метка времени, чтобы удаление разошлось по сети.
+        private static readonly Dictionary<Guid, HybridTimestamp> _tombstones = new();
 
         // Единая сериализация доступа. UI-поток (Add/Update/Delete/Rename) и фоновые
         // sync-задачи меняют _expenses, _lastTimestamp и БД одновременно, поэтому
@@ -60,6 +66,7 @@ namespace FinanceTracker.Interop
                     _connection = null;
                 }
                 _expenses.Clear();
+                _tombstones.Clear();
                 _lastTimestamp = new HybridTimestamp(0, 0);
             }
         }
@@ -141,8 +148,49 @@ namespace FinanceTracker.Interop
 
                 if (!hasDeleted)
                 {
-                    // Тombstone-флаг: удаления теперь синхронизируются
+                    // Флаг удаления для баз, созданных до разделения на expenses/deleted_expenses
                     cmd.CommandText = "ALTER TABLE expenses ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;";
+                    cmd.ExecuteNonQuery();
+                }
+
+                // Метки удаления отдельно от данных покупок: после удаления в expenses
+                // не остаётся ничего, кроме guid и метки времени.
+                cmd.CommandText =
+                    "CREATE TABLE IF NOT EXISTS deleted_expenses (" +
+                    "guid TEXT PRIMARY KEY," +
+                    "updated_at TEXT NOT NULL);";
+                cmd.ExecuteNonQuery();
+            }
+
+            // Разовый перенос tombstone'ов прошлых версий: данные удалённых записей
+            // стираются из expenses, в deleted_expenses остаётся только guid и метка.
+            using (var cmd = _connection.CreateCommand())
+            {
+                var legacy = new List<(long Id, Guid Guid, HybridTimestamp UpdatedAt)>();
+                cmd.CommandText = "SELECT id, guid, updated_at FROM expenses WHERE deleted <> 0;";
+                using (var r = cmd.ExecuteReader())
+                {
+                    while (r.Read())
+                    {
+                        Guid guid = Guid.TryParse(r.GetString(1), out var g) ? g : Guid.NewGuid();
+                        if (!HybridTimestamp.TryParse(r.GetString(2), out var ts))
+                            ts = new HybridTimestamp(0, 0);
+                        legacy.Add((r.GetInt64(0), guid, ts));
+                    }
+                }
+
+                foreach (var (id, guid, ts) in legacy)
+                {
+                    cmd.Parameters.Clear();
+                    cmd.CommandText =
+                        "INSERT OR REPLACE INTO deleted_expenses (guid, updated_at) VALUES ($g, $u);";
+                    cmd.Parameters.AddWithValue("$g", guid.ToString());
+                    cmd.Parameters.AddWithValue("$u", ts.ToString());
+                    cmd.ExecuteNonQuery();
+
+                    cmd.Parameters.Clear();
+                    cmd.CommandText = "DELETE FROM expenses WHERE id = $id;";
+                    cmd.Parameters.AddWithValue("$id", id);
                     cmd.ExecuteNonQuery();
                 }
             }
@@ -169,9 +217,26 @@ namespace FinanceTracker.Interop
             }
 
             _expenses.Clear();
-            using var select = _connection!.CreateCommand();
-            select.CommandText = "SELECT id, guid, name, amount, date, category, updated_at, deleted FROM expenses ORDER BY id;";
-            using var readerExp = select.ExecuteReader();
+            _tombstones.Clear();
+
+            using (var select = _connection!.CreateCommand())
+            {
+                select.CommandText = "SELECT guid, updated_at FROM deleted_expenses;";
+                using var readerDel = select.ExecuteReader();
+                while (readerDel.Read())
+                {
+                    if (!Guid.TryParse(readerDel.GetString(0), out var guid)) continue;
+                    if (!HybridTimestamp.TryParse(readerDel.GetString(1), out var ts))
+                        ts = new HybridTimestamp(0, 0);
+
+                    ObserveTimestamp(ts);
+                    _tombstones[guid] = ts;
+                }
+            }
+
+            using var selectExp = _connection.CreateCommand();
+            selectExp.CommandText = "SELECT id, guid, name, amount, date, category, updated_at FROM expenses ORDER BY id;";
+            using var readerExp = selectExp.ExecuteReader();
             while (readerExp.Read())
             {
                 Guid guid = Guid.TryParse(readerExp.GetString(1), out var g) ? g : Guid.NewGuid();
@@ -190,8 +255,7 @@ namespace FinanceTracker.Interop
                     Amount = readerExp.GetDouble(3),
                     Date = readerExp.GetString(4),
                     Category = readerExp.GetString(5),
-                    UpdatedAt = updatedAt,
-                    IsDeleted = readerExp.GetInt64(7) != 0
+                    UpdatedAt = updatedAt
                 });
             }
 
@@ -230,19 +294,21 @@ namespace FinanceTracker.Interop
             catch { return false; }
         }
 
-        // Преобразует индекс в "видимом" списке (без tombstone) в индекс в _expenses.
-        // Пока запись в tombstone, UI её не видит, но индексы остаются стабильными.
-        private static int VisibleToFullIndex(int visibleIndex)
+        // Метка удаления: guid + версия, без данных покупки. Заносится только если
+        // такой метки ещё не было или пришла более новая (LWW).
+        private static void UpsertTombstoneLocked(Guid guid, HybridTimestamp updatedAt)
         {
-            if (visibleIndex < 0) return -1;
-            int seen = 0;
-            for (int i = 0; i < _expenses.Count; i++)
-            {
-                if (_expenses[i].IsDeleted) continue;
-                if (seen == visibleIndex) return i;
-                seen++;
-            }
-            return -1;
+            if (_tombstones.TryGetValue(guid, out var current) && current >= updatedAt) return;
+            _tombstones[guid] = updatedAt;
+            ExecuteNonQuery(
+                "INSERT OR REPLACE INTO deleted_expenses (guid, updated_at) VALUES ($g, $u);",
+                ("$g", guid.ToString()), ("$u", updatedAt.ToString()));
+        }
+
+        private static void RemoveTombstoneLocked(Guid guid)
+        {
+            if (!_tombstones.Remove(guid)) return;
+            ExecuteNonQuery("DELETE FROM deleted_expenses WHERE guid = $g;", ("$g", guid.ToString()));
         }
 
         public static int AddExpense(string name, double amount, string date, string category = "Другое")
@@ -277,8 +343,7 @@ namespace FinanceTracker.Interop
                     Name = name,
                     Amount = amount,
                     Date = date,
-                    Category = category,
-                    IsDeleted = false
+                    Category = category
                 });
                 return _expenses.Count - 1;
             }
@@ -289,10 +354,9 @@ namespace FinanceTracker.Interop
             lock (_syncLock)
             {
                 if (_connection is null) return false;
-                int full = VisibleToFullIndex(index);
-                if (full < 0) return false;
+                if (index < 0 || index >= _expenses.Count) return false;
 
-                var rec = _expenses[full];
+                var rec = _expenses[index];
                 var updatedAt = NextTimestamp();
 
                 if (!ExecuteNonQuery(
@@ -308,45 +372,127 @@ namespace FinanceTracker.Interop
                 rec.Date = date;
                 rec.Category = category;
                 rec.UpdatedAt = updatedAt;
-                _expenses[full] = rec;
+                _expenses[index] = rec;
                 return true;
             }
         }
 
-        // Удаление превращается в tombstone: запись остаётся в БД (для переноса удаления
-        // на другие устройства), но скрывается из всех UI-методов.
+        // Удаление стирает запись из БД полностью. Чтобы удаление разошлось на другие
+        // устройства, остаётся только метка в deleted_expenses (guid + версия) — без
+        // названия, суммы, даты и категории.
         public static bool DeleteExpense(int index)
         {
             lock (_syncLock)
             {
                 if (_connection is null) return false;
-                int full = VisibleToFullIndex(index);
-                if (full < 0) return false;
+                if (index < 0 || index >= _expenses.Count) return false;
 
-                var rec = _expenses[full];
-                if (rec.IsDeleted) return false;
-
+                var rec = _expenses[index];
                 var updatedAt = NextTimestamp();
-                if (!ExecuteNonQuery(
-                    "UPDATE expenses SET deleted = 1, updated_at = $u WHERE id = $id;",
-                    ("$u", updatedAt.ToString()), ("$id", rec.Id)))
-                    return false;
 
-                rec.IsDeleted = true;
-                rec.UpdatedAt = updatedAt;
-                _expenses[full] = rec;
+                UpsertTombstoneLocked(rec.Guid, updatedAt);
+
+                if (!ExecuteNonQuery("DELETE FROM expenses WHERE id = $id;", ("$id", rec.Id)))
+                {
+                    // Строка осталась жить — метку удаления откатываем, иначе она
+                    // удалит запись на соседних устройствах, оставив её здесь.
+                    RemoveTombstoneLocked(rec.Guid);
+                    return false;
+                }
+
+                _expenses.RemoveAt(index);
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Пакетное удаление всех записей, дата которых попадает в [from; to] включительно.
+        /// Всё в одной транзакции: неделя/месяц/год — это сотни строк, а частичное
+        /// удаление после сбоя оставило бы БД в неконсистентном состоянии.
+        /// Возвращает количество удалённых записей.
+        /// </summary>
+        public static int DeleteExpensesInRange(DateTime from, DateTime to)
+        {
+            lock (_syncLock)
+            {
+                if (_connection is null) return 0;
+
+                // Даты хранятся как "yyyy-MM-dd", поэтому границы сравниваем по датам,
+                // а не по строкам: так не зависим от формата импортированных записей.
+                var doomed = new List<int>();
+                for (int i = 0; i < _expenses.Count; i++)
+                {
+                    if (TryGetExpenseDate(_expenses[i].Date, out var date) && date >= from && date <= to)
+                        doomed.Add(i);
+                }
+                if (doomed.Count == 0) return 0;
+
+                // Метки удаления собираем отдельно: к _tombstones прикасаемся только
+                // после успешного коммита, иначе откат транзакции оставил бы
+                // «мёртвые» метки, которые стёрли бы запись при следующей синхронизации.
+                var newTombstones = new List<(Guid Guid, HybridTimestamp UpdatedAt)>(doomed.Count);
+
+                using (var tx = _connection.BeginTransaction())
+                {
+                    using var deleteCmd = _connection.CreateCommand();
+                    deleteCmd.Transaction = tx;
+                    deleteCmd.CommandText = "DELETE FROM expenses WHERE id = $id;";
+                    var deleteId = deleteCmd.Parameters.Add("$id", SqliteType.Integer);
+
+                    using var tombCmd = _connection.CreateCommand();
+                    tombCmd.Transaction = tx;
+                    tombCmd.CommandText =
+                        "INSERT OR REPLACE INTO deleted_expenses (guid, updated_at) VALUES ($g, $u);";
+                    var tombGuid = tombCmd.Parameters.Add("$g", SqliteType.Text);
+                    var tombUpdatedAt = tombCmd.Parameters.Add("$u", SqliteType.Text);
+
+                    foreach (int index in doomed)
+                    {
+                        var rec = _expenses[index];
+                        var updatedAt = NextTimestamp();
+
+                        deleteId.Value = rec.Id;
+                        deleteCmd.ExecuteNonQuery();
+
+                        tombGuid.Value = rec.Guid.ToString();
+                        tombUpdatedAt.Value = updatedAt.ToString();
+                        tombCmd.ExecuteNonQuery();
+
+                        newTombstones.Add((rec.Guid, updatedAt));
+                    }
+
+                    tx.Commit();
+                }
+
+                foreach (var (guid, updatedAt) in newTombstones)
+                    UpsertTombstoneLocked(guid, updatedAt);
+
+                // С конца к началу, чтобы индексы doomed оставались валидными.
+                for (int i = doomed.Count - 1; i >= 0; i--)
+                    _expenses.RemoveAt(doomed[i]);
+
+                return doomed.Count;
+            }
+        }
+
+        // Дата покупки в БД всегда "yyyy-MM-dd"; TryParse — страховка для старых записей.
+        private static bool TryGetExpenseDate(string? value, out DateTime date)
+        {
+            date = default;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            if (DateTime.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out date))
+            {
+                return true;
+            }
+            return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
         }
 
         public static int GetExpenseCount()
         {
             lock (_syncLock)
             {
-                int count = 0;
-                foreach (var rec in _expenses)
-                    if (!rec.IsDeleted) count++;
-                return count;
+                return _expenses.Count;
             }
         }
 
@@ -358,10 +504,9 @@ namespace FinanceTracker.Interop
             lock (_syncLock)
             {
                 amount = 0.0;
-                int full = VisibleToFullIndex(index);
-                if (full < 0) return false;
+                if (index < 0 || index >= _expenses.Count) return false;
 
-                var rec = _expenses[full];
+                var rec = _expenses[index];
                 nameBuffer?.Clear(); nameBuffer?.Append(rec.Name);
                 amount = rec.Amount;
                 dateBuffer?.Clear(); dateBuffer?.Append(rec.Date);
@@ -379,7 +524,6 @@ namespace FinanceTracker.Interop
                 string mm = month.ToString("00");
                 foreach (var rec in _expenses)
                 {
-                    if (rec.IsDeleted) continue;
                     if (rec.Date is not null && rec.Date.Length >= 10
                         && rec.Date.Substring(0, 4) == yy
                         && rec.Date.Substring(5, 2) == mm)
@@ -435,7 +579,7 @@ namespace FinanceTracker.Interop
                 if (_connection is null) return 0;
                 if (string.IsNullOrWhiteSpace(name)) return 0;
                 using var cmd = _connection.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM expenses WHERE category = $n AND deleted = 0;";
+                cmd.CommandText = "SELECT COUNT(*) FROM expenses WHERE category = $n;";
                 cmd.Parameters.AddWithValue("$n", name.Trim());
                 return Convert.ToInt32(cmd.ExecuteScalar());
             }
@@ -488,24 +632,39 @@ namespace FinanceTracker.Interop
         }
 
         // ====== Синхронизация ======
-        public static List<ExpenseItem> GetAllExpenses()
+
+        private static ExpenseItem ToSyncItem(ExpenseRecord rec) => new ExpenseItem
+        {
+            Id = rec.Guid,
+            UpdatedAtUtc = rec.UpdatedAt,   // см. ExpenseItem
+            Name = rec.Name,
+            Amount = rec.Amount,
+            Date = rec.Date,
+            Category = rec.Category
+        };
+
+        /// <summary>Только живые записи — для статистики и экспорта. Меток удаления здесь нет.</summary>
+        public static List<ExpenseItem> GetLiveExpenses()
         {
             lock (_syncLock)
             {
                 var result = new List<ExpenseItem>(_expenses.Count);
                 foreach (var rec in _expenses)
-                {
-                    result.Add(new ExpenseItem
-                    {
-                        Id = rec.Guid,
-                        UpdatedAtUtc = rec.UpdatedAt,   // см. ExpenseItem
-                        Name = rec.Name,
-                        Amount = rec.Amount,
-                        Date = rec.Date,
-                        Category = rec.Category,
-                        Deleted = rec.IsDeleted
-                    });
-                }
+                    result.Add(ToSyncItem(rec));
+                return result;
+            }
+        }
+
+        /// <summary>Полный набор для синхронизации: живые записи плюс метки удаления (Deleted = true).</summary>
+        public static List<ExpenseItem> GetForSync()
+        {
+            lock (_syncLock)
+            {
+                var result = new List<ExpenseItem>(_expenses.Count + _tombstones.Count);
+                foreach (var rec in _expenses)
+                    result.Add(ToSyncItem(rec));
+                foreach (var (guid, updatedAt) in _tombstones)
+                    result.Add(new ExpenseItem { Id = guid, UpdatedAtUtc = updatedAt, Deleted = true });
                 return result;
             }
         }
@@ -535,27 +694,24 @@ namespace FinanceTracker.Interop
             foreach (var rec in _expenses)
             {
                 if (rec.UpdatedAt >= lastSync)
-                {
-                    result.Add(new ExpenseItem
-                    {
-                        Id = rec.Guid,
-                        UpdatedAtUtc = rec.UpdatedAt,
-                        Name = rec.Name,
-                        Amount = rec.Amount,
-                        Date = rec.Date,
-                        Category = rec.Category,
-                        Deleted = rec.IsDeleted
-                    });
-                }
+                    result.Add(ToSyncItem(rec));
+            }
+            foreach (var (guid, updatedAt) in _tombstones)
+            {
+                if (updatedAt >= lastSync)
+                    result.Add(new ExpenseItem { Id = guid, UpdatedAtUtc = updatedAt, Deleted = true });
             }
             return result;
         }
 
         /// Merge по Id + LWW: побеждает запись с большей HybridTimestamp.
-        /// Удалённые записи (tombstone) переносятся так же, как остальные, поэтому
-        /// удаление распространяется на другие устройства и не «воскресает».
+        /// Метка удаления переносится так же, как обычная запись, поэтому удаление
+        /// распространяется на другие устройства и не «воскресает». При этом данные
+        /// удалённой покупки стираются из БД полностью — остаётся только guid и метка.
         private static void MergeExpensesLocked(IEnumerable<ExpenseItem> incoming)
         {
+            if (_connection is null) return;
+
             foreach (var item in incoming)
             {
                 string category = string.IsNullOrWhiteSpace(item.Category) ? "Другое" : item.Category;
@@ -579,28 +735,47 @@ namespace FinanceTracker.Interop
                     if (existing.UpdatedAt >= incomingUpdatedAt)
                         continue;
 
+                    if (item.Deleted)
+                    {
+                        // Удаление с другого устройства: строка уходит из БД целиком.
+                        if (!ExecuteNonQuery("DELETE FROM expenses WHERE id = $id;", ("$id", existing.Id)))
+                            continue;
+
+                        _expenses.RemoveAt(existingIndex);
+                        UpsertTombstoneLocked(guid, incomingUpdatedAt);
+                        continue;
+                    }
+
                     if (ExecuteNonQuery(
-                        "UPDATE expenses SET name = $n, amount = $a, date = $d, category = $c, updated_at = $u, deleted = $x WHERE id = $id;",
+                        "UPDATE expenses SET name = $n, amount = $a, date = $d, category = $c, updated_at = $u WHERE id = $id;",
                         ("$n", item.Name), ("$a", item.Amount), ("$d", item.Date),
                         ("$c", category), ("$u", incomingUpdatedAt.ToString()),
-                        ("$x", item.Deleted ? 1 : 0), ("$id", existing.Id)))
+                        ("$id", existing.Id)))
                     {
                         existing.Name = item.Name;
                         existing.Amount = item.Amount;
                         existing.Date = item.Date;
                         existing.Category = category;
                         existing.UpdatedAt = incomingUpdatedAt;
-                        existing.IsDeleted = item.Deleted;
                         _expenses[existingIndex] = existing;
                     }
                 }
+                else if (item.Deleted)
+                {
+                    // Записи у нас нет — сохраняем только метку, чтобы она не вернулась
+                    // вместе с данными с какого-нибудь устройства.
+                    UpsertTombstoneLocked(guid, incomingUpdatedAt);
+                }
                 else
                 {
+                    // Локальная метка удаления новее входящей записи — запись остаётся удалённой.
+                    if (_tombstones.TryGetValue(guid, out var tombstoneAt) && tombstoneAt >= incomingUpdatedAt)
+                        continue;
+
                     if (ExecuteNonQuery(
-                        "INSERT INTO expenses (guid, name, amount, date, category, updated_at, deleted) VALUES ($g, $n, $a, $d, $c, $u, $x);",
+                        "INSERT INTO expenses (guid, name, amount, date, category, updated_at, deleted) VALUES ($g, $n, $a, $d, $c, $u, 0);",
                         ("$g", guid.ToString()), ("$n", item.Name), ("$a", item.Amount),
-                        ("$d", item.Date), ("$c", category),
-                        ("$u", incomingUpdatedAt.ToString()), ("$x", item.Deleted ? 1 : 0)))
+                        ("$d", item.Date), ("$c", category), ("$u", incomingUpdatedAt.ToString())))
                     {
                         long id;
                         using (var cmd = _connection!.CreateCommand())
@@ -616,12 +791,16 @@ namespace FinanceTracker.Interop
                             Name = item.Name,
                             Amount = item.Amount,
                             Date = item.Date,
-                            Category = category,
-                            IsDeleted = item.Deleted
+                            Category = category
                         });
 
+                        // Метка удаления устарела — убираем её, иначе следующая же
+                        // синхронизация с ней снова сотрёт запись.
+                        if (_tombstones.ContainsKey(guid))
+                            RemoveTombstoneLocked(guid);
+
                         // Категория пришла с другого устройства — держим таблицу categories в согласии.
-                        if (!item.Deleted && category != "Другое")
+                        if (category != "Другое")
                             EnsureCategory(category);
                     }
                 }

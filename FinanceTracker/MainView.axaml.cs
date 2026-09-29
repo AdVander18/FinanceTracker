@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,6 +13,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
 using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Selection;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
@@ -43,6 +45,8 @@ namespace FinanceTracker.Views
         private readonly string _dataFilePath;
         private int _editingIndex = -1;
         private ExpenseItem? _pendingDeleteItem;
+        private enum DeletePeriodKind { None, Week, Month, Year, AllTime, Custom }
+        private DeletePeriodKind _pendingDeletePeriodKind = DeletePeriodKind.None;
         private bool _selectionActive;
         private bool _settingsPanelVisible = false;
         private int _selectedMonth;
@@ -63,6 +67,9 @@ namespace FinanceTracker.Views
         private bool _sortAscending = true;
 #if ANDROID
         private StatsView? _statsView;
+        private IInputPane? _inputPane;
+        private double _keyboardHeight;
+        private Thickness _safeArea;
 #endif
 
         public MainView()
@@ -190,23 +197,45 @@ if (!storageInitialized)
             if (insetsManager is null) return;
 
             insetsManager.DisplayEdgeToEdge = true;
-            ApplySafeAreaPadding(insetsManager.SafeAreaPadding);
+            _safeArea = insetsManager.SafeAreaPadding;
+            insetsManager.SafeAreaChanged += OnSafeAreaChanged;
 
-            topLevel.InsetsManager!.SafeAreaChanged += OnSafeAreaChanged;
+            // Регистрируем клавиатуру (IME): в edge-to-edge режиме окно не сжимается
+            // само при появлении клавиатуры, о системных инсетах сообщается через IInputPane.
+            // Поднимаем весь контент (включая панель добавления покупки) над клавиатурой.
+            _inputPane = topLevel.InputPane;
+            if (_inputPane != null)
+            {
+                _inputPane.StateChanged += OnInputPaneStateChanged;
+                _keyboardHeight = _inputPane.State == InputPaneState.Open
+                    ? _inputPane.OccludedRect.Height
+                    : 0;
+            }
+
+            UpdateRootGridPadding();
         }
 
         private void OnSafeAreaChanged(object? sender, SafeAreaChangedArgs e)
         {
-            ApplySafeAreaPadding(e.SafeAreaPadding);
+            _safeArea = e.SafeAreaPadding;
+            UpdateRootGridPadding();
         }
 
-        private void ApplySafeAreaPadding(Thickness safeArea)
+        private void OnInputPaneStateChanged(object? sender, InputPaneStateEventArgs e)
+        {
+            _keyboardHeight = e.NewState == InputPaneState.Open
+                ? e.EndRect.Height
+                : 0;
+            UpdateRootGridPadding();
+        }
+
+        private void UpdateRootGridPadding()
         {
             RootGrid.Margin = new Thickness(
-                Math.Max(0, safeArea.Left),
-                Math.Max(0, safeArea.Top),
-                Math.Max(0, safeArea.Right),
-                Math.Max(0, safeArea.Bottom));
+                Math.Max(0, _safeArea.Left),
+                Math.Max(0, _safeArea.Top),
+                Math.Max(0, _safeArea.Right),
+                Math.Max(0, _safeArea.Bottom) + _keyboardHeight);
         }
 #endif
 
@@ -368,6 +397,300 @@ if (!storageInitialized)
         {
             _pendingDeleteItem = null;
             DeleteConfirmOverlay.IsVisible = false;
+        }
+
+        // Удаление покупок за период: меню -> выбор периода -> подтверждение.
+        // Перед подтверждением показываем, что именно и в каком количестве будет стёрто.
+        private void OnCartClick(object sender, RoutedEventArgs e)
+        {
+            CloseSettingsPanel();
+            _pendingDeletePeriodKind = DeletePeriodKind.None;
+            DeleteFromDatePicker.SelectedDate = DateTime.Today.AddDays(-6);
+            DeleteToDatePicker.SelectedDate = DateTime.Today;
+            UpdateDeletePeriodButtons();
+            UpdateDeleteRangePreview();
+            ShowDeleteStep(DeleteStepKind.Menu);
+            DeletePeriodOverlay.IsVisible = true;
+        }
+
+        private enum DeleteStepKind { Menu, Range, Confirm }
+
+        private void ShowDeleteStep(DeleteStepKind step)
+        {
+            DeleteStepMenu.IsVisible = step == DeleteStepKind.Menu;
+            DeleteStepRange.IsVisible = step == DeleteStepKind.Range;
+            DeleteStepConfirm.IsVisible = step == DeleteStepKind.Confirm;
+        }
+
+        private void OnDeletePeriodOverlayPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            e.Handled = true;
+            if (e.Source == DeletePeriodOverlay)
+                OnDeletePeriodCancelClick(sender, new RoutedEventArgs());
+        }
+
+        private void OnDeletePeriodCancelClick(object sender, RoutedEventArgs e)
+        {
+            _pendingDeletePeriodKind = DeletePeriodKind.None;
+            DeletePeriodOverlay.IsVisible = false;
+        }
+
+        private void OnDeleteStartClick(object sender, RoutedEventArgs e)
+        {
+            ShowDeleteStep(DeleteStepKind.Range);
+        }
+
+        private void OnDeleteRangeBackClick(object sender, RoutedEventArgs e)
+        {
+            _pendingDeletePeriodKind = DeletePeriodKind.None;
+            ShowDeleteStep(DeleteStepKind.Menu);
+        }
+
+        private void OnDeleteRangeWeekClick(object sender, RoutedEventArgs e)
+            => AskDeleteConfirm(DeletePeriodKind.Week);
+
+        private void OnDeleteRangeMonthClick(object sender, RoutedEventArgs e)
+            => AskDeleteConfirm(DeletePeriodKind.Month);
+
+        private void OnDeleteRangeYearClick(object sender, RoutedEventArgs e)
+            => AskDeleteConfirm(DeletePeriodKind.Year);
+
+        private void OnDeleteRangeAllTimeClick(object sender, RoutedEventArgs e)
+            => AskDeleteConfirm(DeletePeriodKind.AllTime);
+
+        private void OnDeleteRangeCustomClick(object sender, RoutedEventArgs e)
+            => AskDeleteConfirm(DeletePeriodKind.Custom);
+
+        // "Неделя/месяц/год" — это скользящее окно назад от сегодня, а не календарный
+        // период: пользователь ждёт "удалить то, чем пользовался последние 7 дней",
+        // а не "удалить прошлый календарный месяц целиком". Границы включительные.
+        private readonly record struct DateRange(DateTime From, DateTime To);
+
+        private static DateRange GetQuickRange(DeletePeriodKind kind, DateTime today) => kind switch
+        {
+            DeletePeriodKind.Week => new DateRange(today.AddDays(-6), today),
+            DeletePeriodKind.Month => new DateRange(today.AddMonths(-1), today),
+            DeletePeriodKind.Year => new DateRange(today.AddYears(-1), today),
+            _ => new DateRange(DateTime.MinValue, DateTime.MaxValue),
+        };
+
+        // Диапазон фиксируется в момент подтверждения, чтобы "Да" удаляло ровно то,
+        // о чём пользователь прочитал в вопросе.
+        private DateRange _pendingDeleteRange;
+        private int _pendingDeleteCount;
+        private double _pendingDeleteSum;
+
+        private DateRange GetCustomRangeFromPickers()
+        {
+            var from = DeleteFromDatePicker.SelectedDate?.Date;
+            var to = DeleteToDatePicker.SelectedDate?.Date;
+
+            if (from is null && to is null)
+            {
+                from = DateTime.Today.AddDays(-6);
+                to = DateTime.Today;
+            }
+            else if (from is null)
+            {
+                from = to!.Value;
+            }
+            else if (to is null)
+            {
+                to = from.Value;
+            }
+
+            if (from.Value > to.Value)
+                (from, to) = (to, from);
+
+            DeleteFromDatePicker.SelectedDate = from;
+            DeleteToDatePicker.SelectedDate = to;
+            return new DateRange(from.Value, to.Value);
+        }
+
+        // Считаем по уже загруженному списку, чтобы предпросмотр не ходил в БД.
+        private int CountInRange(DateRange range)
+        {
+            int count = 0;
+            foreach (var expense in _allExpenses)
+            {
+                if (TryGetExpenseDate(expense.Date, out var date) && date >= range.From && date <= range.To)
+                    count++;
+            }
+            return count;
+        }
+
+        private double SumInRange(DateRange range)
+        {
+            double sum = 0;
+            foreach (var expense in _allExpenses)
+            {
+                if (TryGetExpenseDate(expense.Date, out var date) && date >= range.From && date <= range.To)
+                    sum += expense.Amount;
+            }
+            return sum;
+        }
+
+        private static bool TryGetExpenseDate(string? value, out DateTime date)
+        {
+            date = default;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            if (DateTime.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out date))
+            {
+                return true;
+            }
+            return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+        }
+
+        // Счётчики прямо на кнопках: видно, сколько записей затронет каждая кнопка,
+        // ещё до перехода в подтверждение.
+        private void UpdateDeletePeriodButtons()
+        {
+            var today = DateTime.Today;
+            SetDeleteButtonText(DeleteWeekButton, "Delete_Action_Week", GetQuickRange(DeletePeriodKind.Week, today));
+            SetDeleteButtonText(DeleteMonthButton, "Delete_Action_Month", GetQuickRange(DeletePeriodKind.Month, today));
+            SetDeleteButtonText(DeleteYearButton, "Delete_Action_Year", GetQuickRange(DeletePeriodKind.Year, today));
+            SetDeleteButtonText(DeleteAllTimeButton, "Delete_Action_AllTime", GetQuickRange(DeletePeriodKind.AllTime, today));
+
+            void SetDeleteButtonText(Button button, string key, DateRange range)
+            {
+                string label = Localizer.Instance[key];
+                int count = CountInRange(range);
+                button.Content = count > 0 ? $"{label} ({count})" : label;
+            }
+        }
+
+        // Живой предпросмотр для произвольного периода — обновляется при смене дат.
+        private void OnDeleteRangeDateChanged(object? sender, DatePickerSelectedValueChangedEventArgs e)
+        {
+            if (DeleteStepRange.IsVisible)
+                UpdateDeleteRangePreview();
+        }
+
+        private void UpdateDeleteRangePreview()
+        {
+            var range = GetCustomRangeFromPickers();
+            int count = CountInRange(range);
+            DeleteRangePreviewText.Text = count > 0
+                ? Localizer.Instance.Format("Delete_RangePreview", count, SumInRange(range).ToString("N2"))
+                : Localizer.Instance["Delete_RangePreview_Empty"];
+        }
+
+        private void AskDeleteConfirm(DeletePeriodKind kind)
+        {
+            _pendingDeletePeriodKind = kind;
+            _pendingDeleteRange = kind == DeletePeriodKind.Custom
+                ? GetCustomRangeFromPickers()
+                : GetQuickRange(kind, DateTime.Today);
+            _pendingDeleteCount = CountInRange(_pendingDeleteRange);
+            _pendingDeleteSum = SumInRange(_pendingDeleteRange);
+
+            DeletePeriodConfirmText.Text = Localizer.Instance.Format(
+                "Delete_Confirm_Question", GetDeletePeriodDescription(kind));
+            DeletePeriodConfirmDetails.Text = _pendingDeleteCount > 0
+                ? Localizer.Instance.Format(
+                    "Delete_Confirm_Details",
+                    _pendingDeleteCount,
+                    _pendingDeleteSum.ToString("N2"),
+                    DescribeRange(_pendingDeleteRange))
+                : Localizer.Instance["Delete_Confirm_Empty"];
+
+            // Подтверждать нечего — кнопку блокируем, чтобы не делать пустой заход в БД.
+            DeleteConfirmYesButton.IsEnabled = _pendingDeleteCount > 0;
+            ShowDeleteStep(DeleteStepKind.Confirm);
+        }
+
+        private string GetDeletePeriodDescription(DeletePeriodKind kind)
+        {
+            var loc = Localizer.Instance;
+
+            if (kind == DeletePeriodKind.Custom)
+            {
+                var culture = loc.Culture;
+                return loc.Format(
+                    "Delete_Period_Custom",
+                    _pendingDeleteRange.From.ToString("d", culture),
+                    _pendingDeleteRange.To.ToString("d", culture));
+            }
+
+            return loc[kind switch
+            {
+                DeletePeriodKind.Week => "Delete_Period_Week",
+                DeletePeriodKind.Month => "Delete_Period_Month",
+                DeletePeriodKind.Year => "Delete_Period_Year",
+                _ => "Delete_Period_AllTime",
+            }];
+        }
+
+        // Точные границы в подтверждении: "за месяц" иначе слишком расплывчато.
+        private string DescribeRange(DateRange range)
+        {
+            var culture = Localizer.Instance.Culture;
+
+            // У "всё время" нижней границы нет — показываем самую раннюю запись.
+            if (range.From == DateTime.MinValue)
+            {
+                DateTime? first = null;
+                foreach (var expense in _allExpenses)
+                {
+                    if (TryGetExpenseDate(expense.Date, out var date) && (first is null || date < first))
+                        first = date;
+                }
+                return first is null
+                    ? Localizer.Instance["Delete_Period_AllTime"]
+                    : Localizer.Instance.Format("Delete_Range_AllFrom", first.Value.ToString("d", culture));
+            }
+
+            return range.From == range.To
+                ? range.From.ToString("d", culture)
+                : range.From.ToString("d", culture) + " - " + range.To.ToString("d", culture);
+        }
+
+        private async void OnDeletePeriodConfirmYesClick(object sender, RoutedEventArgs e)
+        {
+            var range = _pendingDeleteRange;
+            int expected = _pendingDeleteCount;
+            double sum = _pendingDeleteSum;
+
+            _pendingDeletePeriodKind = DeletePeriodKind.None;
+            DeletePeriodOverlay.IsVisible = false;
+
+            if (expected == 0) return;
+
+            int deleted = NativeMethods.DeleteExpensesInRange(range.From, range.To);
+            if (deleted == 0)
+            {
+                await ShowMessage(
+                    Localizer.Instance["Delete_Result_Title"],
+                    Localizer.Instance["Delete_Result_Failed"]);
+                return;
+            }
+
+            // Перечитываем из БД: после пакетного удаления и список, и итоги по месяцу
+            // уже не совпадают с тем, что было в памяти.
+            LoadExpensesFromNative();
+            FilterExpensesBySelectedMonth();
+            UpdateTotal();
+            UpdateSelectionUI();
+            CloseAllSwipeRows();
+
+            // Открытая панель правки ссылается на позицию в списке, которая после
+            // удаления могла исчезнуть — закрываем её, чтобы индекс не стал битым.
+            if (AddPanel.IsVisible)
+            {
+                AddPanel.IsVisible = false;
+                _editingIndex = -1;
+            }
+
+            await ShowMessage(
+                Localizer.Instance["Delete_Result_Title"],
+                Localizer.Instance.Format("Delete_Result_Message", deleted, sum.ToString("N2")));
+        }
+
+        private void OnDeletePeriodConfirmNoClick(object sender, RoutedEventArgs e)
+        {
+            _pendingDeletePeriodKind = DeletePeriodKind.None;
+            ShowDeleteStep(DeleteStepKind.Range);
         }
 
         private static string GetDataFilePath()
@@ -815,6 +1138,11 @@ if (!storageInitialized)
             var topLevel = TopLevel.GetTopLevel(this);
             if (topLevel?.InsetsManager != null)
                 topLevel.InsetsManager.SafeAreaChanged -= OnSafeAreaChanged;
+            if (_inputPane != null)
+            {
+                _inputPane.StateChanged -= OnInputPaneStateChanged;
+                _inputPane = null;
+            }
 #endif
 
             base.OnDetachedFromVisualTree(e);
@@ -843,7 +1171,7 @@ if (!storageInitialized)
 
                 if (file is null) return;
 
-                var expenses = NativeMethods.GetAllExpenses()
+                var expenses = NativeMethods.GetLiveExpenses()
                     .OrderBy(x => x.Date)
                     .ThenBy(x => x.Name)
                     .ToList();
@@ -1241,6 +1569,58 @@ if (!storageInitialized)
                 .ToArray();
         }
 
+        // Месяцы и дни недели в DatePicker/Calendar читаются из CultureInfo.CurrentCulture
+        // один раз — при построении шаблона, и смена Template их не обновляет.
+        // Поэтому после смены языка пересобираем подписи вручную.
+        private void RefreshDatePickerLocales()
+        {
+            foreach (var picker in this.GetVisualDescendants().OfType<DatePicker>().ToList())
+            {
+                // Текст в самом поле ("29 сентября 2026") формируется из SelectedDate,
+                // поэтому сбрасываем и возвращаем значение, чтобы перерисовать его.
+                if (picker.SelectedDate is { } selected)
+                {
+                    picker.SelectedDate = null;
+                    picker.SelectedDate = selected;
+                }
+
+                // Календарь лежит в Popup, который ещё не создан, пока список не открыт:
+                // к моменту открытия культура уже актуальна, трогать нечего.
+            }
+
+            foreach (var item in this.GetVisualDescendants().OfType<CalendarItem>().ToList())
+                RefreshCalendarItem(item);
+        }
+
+        // CalendarItem — internal-класс Avalonia, поэтому обращаемся к нему по имени
+        // и обновляем подписи через его приватные методы, читающие CurrentCulture.
+        private static readonly MethodInfo? SetDayTitlesMethod =
+            Type.GetType("Avalonia.Controls.Primitives.CalendarItem, Avalonia.Controls")
+                ?.GetMethod("SetDayTitles", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private static readonly MethodInfo? SetMonthModeHeaderButtonMethod =
+            Type.GetType("Avalonia.Controls.Primitives.CalendarItem, Avalonia.Controls")
+                ?.GetMethod("SetMonthModeHeaderButton", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private static readonly MethodInfo? SetMonthButtonsForYearModeMethod =
+            Type.GetType("Avalonia.Controls.Primitives.CalendarItem, Avalonia.Controls")
+                ?.GetMethod("SetMonthButtonsForYearMode", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private static void RefreshCalendarItem(object calendarItem)
+        {
+            try
+            {
+                SetDayTitlesMethod?.Invoke(calendarItem, null);
+                SetMonthModeHeaderButtonMethod?.Invoke(calendarItem, null);
+                SetMonthButtonsForYearModeMethod?.Invoke(calendarItem, null);
+            }
+            catch (Exception)
+            {
+                // Если в новой версии Avalonia сигнатуры изменились, просто оставляем
+                // календарь на старом языке — это не должно ломать переключение языка.
+            }
+        }
+
         private void RefreshLocalizedStaticTexts()
         {
             // РњРµСЃСЏС†С‹
@@ -1262,6 +1642,8 @@ if (!storageInitialized)
             // РљРЅРѕРїРєР° "Р”РѕР±Р°РІРёС‚СЊ/РЎРѕС…СЂР°РЅРёС‚СЊ" РІ СЂР°Р·РґРµР»Рµ РєР°С‚РµРіРѕСЂРёР№
             AddCategoryButton.Content = Localizer.Instance[
                 _renamingCategory != null ? "Button_SaveShort" : "Button_AddShort"];
+
+            RefreshDatePickerLocales();
 
             UpdateTotal();
             UpdateSelectionUI();

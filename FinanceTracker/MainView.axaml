@@ -318,11 +318,13 @@
 				</TranslateTransform>
 			</Border.RenderTransform>
 
+			<!-- Панель настроек: прокручиваемое содержимое + закреплённый нижний блок -->
+			<Grid RowDefinitions="*,Auto">
 			<!-- Оборачиваем содержимое в ScrollViewer -->
-			<ScrollViewer VerticalScrollBarVisibility="Auto"
+			<ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
 						  HorizontalScrollBarVisibility="Disabled"
 						  Padding="0">
-				<StackPanel Margin="20" Spacing="15">
+				<StackPanel Margin="20,20,20,10" Spacing="15">
 					<!-- Заголовок с кнопкой закрытия -->
 					<!-- Заголовок с кнопками смены языка и закрытия -->
 					<Grid ColumnDefinitions="*,Auto,Auto">
@@ -440,29 +442,46 @@
 						</ItemsControl>
 					</StackPanel>
 
-					<!-- Новые значки внизу панели настроек -->
-					<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="20" Margin="0,10,0,0">
-						<Button Background="Transparent" BorderThickness="0" Padding="6"
-								ToolTip.Tip="{loc:Loc Tooltip_Burger}" Click="OnBurgerClick">
-							<Path Data="{StaticResource IconBurger}"
-								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-								  Width="28" Height="28" Stretch="Uniform"/>
-						</Button>
-						<Button Background="Transparent" BorderThickness="0" Padding="6"
-								ToolTip.Tip="{loc:Loc Tooltip_Chicken}" Click="OnChickenClick">
-							<Path Data="{StaticResource IconRestaurant}"
-								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-								  Width="28" Height="28" Stretch="Uniform"/>
-						</Button>
-						<Button Background="Transparent" BorderThickness="0" Padding="6"
-								ToolTip.Tip="{loc:Loc Tooltip_Star}" Click="OnStarClick">
-							<Path Data="{StaticResource IconStar}"
-								  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-								  Width="28" Height="28" Stretch="Uniform"/>
-						</Button>
-					</StackPanel>
+					<!-- Значки внизу панели настроек: группа по центру -->
+					<Grid ColumnDefinitions="*" Margin="0,10,0,0">
+						<StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="20">
+							<Button Background="Transparent" BorderThickness="0" Padding="6"
+									ToolTip.Tip="{loc:Loc Tooltip_Burger}" Click="OnBurgerClick">
+								<Path Data="{StaticResource IconBurger}"
+									  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+									  Width="28" Height="28" Stretch="Uniform"/>
+							</Button>
+							<Button Background="Transparent" BorderThickness="0" Padding="6"
+									ToolTip.Tip="{loc:Loc Tooltip_Chicken}" Click="OnChickenClick">
+								<Path Data="{StaticResource IconRestaurant}"
+									  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+									  Width="28" Height="28" Stretch="Uniform"/>
+							</Button>
+							<Button Background="Transparent" BorderThickness="0" Padding="6"
+									ToolTip.Tip="{loc:Loc Tooltip_Star}" Click="OnStarClick">
+								<Path Data="{StaticResource IconStar}"
+									  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+									  Width="28" Height="28" Stretch="Uniform"/>
+							</Button>
+						</StackPanel>
+					</Grid>
 				</StackPanel>
 			</ScrollViewer>
+
+			<!-- Закреплённый футер: кнопка корзины в правом нижнем углу -->
+			<Grid Grid.Row="1" Margin="20,0,20,14">
+				<Button x:Name="CartButton"
+						HorizontalAlignment="Right"
+						Margin="0,0,-6,0"
+						Background="Transparent" BorderThickness="0" Padding="6"
+						ToolTip.Tip="{loc:Loc Tooltip_DelPurch}"
+						Click="OnCartClick">
+					<Path Data="{StaticResource IconDelete}"
+						  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+						  Width="28" Height="28" Stretch="Uniform"/>
+				</Button>
+			</Grid>
+			</Grid>
 		</Border>
 		<Border x:Name="WastedOverlay"
 				Grid.Row="0" Grid.RowSpan="5"
@@ -568,13 +587,129 @@
 								Background="#E74C3C"
 								Foreground="White"
 								Click="OnDeleteConfirmDeleteClick"/>
-						<Button x:Name="DeleteConfirmCancelButton"
+<Button x:Name="DeleteConfirmCancelButton"
 								Content="{loc:Loc Button_Cancel}"
 								VerticalAlignment="Center"
 								Margin="0"
 								Click="OnDeleteConfirmCancelClick"/>
 					</WrapPanel>
 				</StackPanel>
+			</Border>
+		</Border>
+
+		<!-- Оверлей удаления покупок за период (Windows и Android) -->
+		<Border x:Name="DeletePeriodOverlay"
+				Grid.Row="0" Grid.RowSpan="5"
+				Background="#80000000"
+				IsVisible="False"
+				ZIndex="130"
+				PointerPressed="OnDeletePeriodOverlayPointerPressed">
+			<Border Background="{DynamicResource CardBackgroundBrush}"
+					CornerRadius="10"
+					Padding="20"
+					MinWidth="280"
+					MaxWidth="400"
+					HorizontalAlignment="Center"
+					VerticalAlignment="Center"
+					BoxShadow="0 4 12 0 #44000000">
+				<Grid>
+					<!-- Шаг 1: меню удаления -->
+					<StackPanel x:Name="DeleteStepMenu" Spacing="15">
+						<TextBlock Text="{loc:Loc Delete_Title}"
+								   FontSize="18"
+								   FontWeight="SemiBold"
+								   Foreground="{DynamicResource TitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<TextBlock Text="{loc:Loc Delete_MenuHint}"
+								   Foreground="{DynamicResource SubtitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<Button x:Name="DeleteStartButton"
+								Content="{loc:Loc Delete_Action_For}"
+								HorizontalAlignment="Stretch"
+								Click="OnDeleteStartClick"/>
+						<Button Content="{loc:Loc Button_Cancel}"
+								HorizontalAlignment="Right"
+								Click="OnDeletePeriodCancelClick"/>
+					</StackPanel>
+
+					<!-- Шаг 2: выбор периода -->
+					<StackPanel x:Name="DeleteStepRange" Spacing="10" IsVisible="False">
+						<TextBlock Text="{loc:Loc Delete_Title_For}"
+								   FontSize="18"
+								   FontWeight="SemiBold"
+								   Foreground="{DynamicResource TitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<Button x:Name="DeleteWeekButton"
+								Content="{loc:Loc Delete_Action_Week}"
+								HorizontalAlignment="Stretch"
+								Click="OnDeleteRangeWeekClick"/>
+						<Button x:Name="DeleteMonthButton"
+								Content="{loc:Loc Delete_Action_Month}"
+								HorizontalAlignment="Stretch"
+								Click="OnDeleteRangeMonthClick"/>
+						<Button x:Name="DeleteYearButton"
+								Content="{loc:Loc Delete_Action_Year}"
+								HorizontalAlignment="Stretch"
+								Click="OnDeleteRangeYearClick"/>
+						<Button x:Name="DeleteAllTimeButton"
+								Content="{loc:Loc Delete_Action_AllTime}"
+								HorizontalAlignment="Stretch"
+								Click="OnDeleteRangeAllTimeClick"/>
+
+						<Separator/>
+
+						<TextBlock Text="{loc:Loc Delete_RangeHint}"
+								   FontSize="12"
+								   Foreground="{DynamicResource SubtitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto" RowSpacing="6">
+							<TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc Delete_From}" VerticalAlignment="Center"/>
+							<DatePicker Grid.Row="0" Grid.Column="1" x:Name="DeleteFromDatePicker" HorizontalAlignment="Stretch"
+										SelectedDateChanged="OnDeleteRangeDateChanged"/>
+							<TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc Delete_To}" VerticalAlignment="Center"/>
+							<DatePicker Grid.Row="1" Grid.Column="1" x:Name="DeleteToDatePicker" HorizontalAlignment="Stretch"
+										SelectedDateChanged="OnDeleteRangeDateChanged"/>
+						</Grid>
+						<TextBlock x:Name="DeleteRangePreviewText"
+								   FontSize="12"
+								   Foreground="{DynamicResource SubtitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<Button Content="{loc:Loc Delete_Action_Custom}"
+								HorizontalAlignment="Stretch"
+								Click="OnDeleteRangeCustomClick"/>
+
+						<WrapPanel HorizontalAlignment="Right" ItemSpacing="8" Margin="0,5,0,0">
+							<Button Content="{loc:Loc Button_Back}" Margin="0" Click="OnDeleteRangeBackClick"/>
+						</WrapPanel>
+					</StackPanel>
+
+					<!-- Шаг 3: подтверждение удаления -->
+					<StackPanel x:Name="DeleteStepConfirm" Spacing="15" IsVisible="False">
+						<TextBlock Text="{loc:Loc Delete_Title_Confirm}"
+								   FontSize="18"
+								   FontWeight="SemiBold"
+								   Foreground="{DynamicResource TitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<TextBlock x:Name="DeletePeriodConfirmText"
+								   Foreground="{DynamicResource TitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<TextBlock x:Name="DeletePeriodConfirmDetails"
+								   Foreground="{DynamicResource SubtitleForegroundBrush}"
+								   TextWrapping="Wrap"/>
+						<WrapPanel HorizontalAlignment="Right" ItemSpacing="8">
+							<Button x:Name="DeleteConfirmYesButton"
+									Content="{loc:Loc Button_Yes}"
+									Margin="0"
+									Background="#E74C3C"
+									Foreground="White"
+									Click="OnDeletePeriodConfirmYesClick"/>
+							<Button x:Name="DeleteConfirmNoButton"
+									Content="{loc:Loc Button_No}"
+									Margin="0"
+									Click="OnDeletePeriodConfirmNoClick"/>
+						</WrapPanel>
+					</StackPanel>
+				</Grid>
 			</Border>
 		</Border>
 	</Grid>

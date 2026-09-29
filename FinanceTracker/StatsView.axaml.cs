@@ -73,7 +73,7 @@ namespace FinanceTracker.Views
         public void Refresh()
         {
             _all.Clear();
-            _all.AddRange(NativeMethods.GetAllExpenses());
+            _all.AddRange(NativeMethods.GetLiveExpenses());
             Rebuild();
         }
 
@@ -368,6 +368,7 @@ namespace FinanceTracker.Views
 
         private static bool MatchesPeriod(ExpenseItem e, int month, int year)
         {
+            if (e.Deleted) return false;
             if (!DateTime.TryParse(e.Date, out var date)) return false;
             return date.Month == month && date.Year == year;
         }
